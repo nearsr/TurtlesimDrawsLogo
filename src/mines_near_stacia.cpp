@@ -4,6 +4,9 @@
 #include "turtlesim/Pose.h"
 #include <sstream>
 
+//File handling
+#include <fstream>
+
 using namespace std;
 
 ros::Publisher velocity_publisher;
@@ -15,6 +18,7 @@ void move(double speed, double distance, bool isForward);
 void poseCallback(const turtlesim::Pose::ConstPtr & msg);	//Callback fn everytime the turtle pose msg is published over the /turtle1/pose topic.
 void moveGoal(turtlesim::Pose goal_pose, double distance_tolerance);	//this will move robot to goal
 double getDistance(double x1, double y1, double x2, double y2);
+void readGoalPosesFromFile();
 
 //void poseCallback(const std_msgs::String::ConstPtr& msg)
 void poseCallback(const turtlesim::Pose::ConstPtr &pose_message)
@@ -22,7 +26,7 @@ void poseCallback(const turtlesim::Pose::ConstPtr &pose_message)
     turtlesim_pose.x = pose_message->x;
     turtlesim_pose.y = pose_message->y;
     turtlesim_pose.theta = pose_message->theta;
-    ROS_INFO("x = [%f], y = [%f]", pose_message->x, pose_message->y);
+    //ROS_INFO("x = [%f], y = [%f]", pose_message->x, pose_message->y);
 }
 
 int main(int argc, char **argv)
@@ -42,6 +46,7 @@ int main(int argc, char **argv)
 
     move(speed, distance, isForward);
 
+    readGoalPosesFromFile();
 
 	turtlesim::Pose goal_pose;
 	goal_pose.x = 1;
@@ -55,6 +60,38 @@ int main(int argc, char **argv)
     return 0;
 }
 
+void readGoalPosesFromFile() {
+    /*
+    ifstream inFile;
+    inFile.open("~/catkin_ws/src/mines_near_stacia/coords.txt");
+
+    if (!inFile)
+    {
+        cerr << "Unable to open file datafile.txt";
+        exit(1); // call system to stop
+    }
+
+    while (inFile >> x)
+    {
+        sum = sum + x;
+    }
+
+    inFile.close();*/
+
+    string line;
+    ifstream poseFile("/home/stacia/catkin_ws/src/mines_near_stacia/coords.txt");
+    if (poseFile.is_open())
+    {
+        while (getline(poseFile, line))
+        {
+            cout << line << '\n';
+        }
+        poseFile.close();
+    }
+
+    else
+        cout << "Unable to open file\n\n";
+}
 
 void move(double speed, double distance, bool isForward) {
     //distance = speed * time
