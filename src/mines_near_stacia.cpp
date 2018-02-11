@@ -1,0 +1,128 @@
+#include "ros/ros.h"
+#include "geometry_msgs/Twist.h"
+#include "std_msgs/String.h"
+#include "turtlesim/Pose.h"
+#include <sstream>
+
+using namespace std;
+
+ros::Publisher velocity_publisher;
+ros::Subscriber pose_sub;
+turtlesim::Pose turtlesim_pose;
+
+//method to move robot straight
+void move(double speed, double distance, bool isForward);
+void poseCallback(const turtlesim::Pose::ConstPtr & msg);	//Callback fn everytime the turtle pose msg is published over the /turtle1/pose topic.
+void moveGoal(turtlesim::Pose goal_pose, double distance_tolerance);	//this will move robot to goal
+double getDistance(double x1, double y1, double x2, double y2);
+
+//void poseCallback(const std_msgs::String::ConstPtr& msg)
+void poseCallback(const turtlesim::Pose::ConstPtr &pose_message)
+{
+    turtlesim_pose.x = pose_message->x;
+    turtlesim_pose.y = pose_message->y;
+    turtlesim_pose.theta = pose_message->theta;
+    ROS_INFO("x = [%f], y = [%f]", pose_message->x, pose_message->y);
+}
+
+int main(int argc, char **argv)
+{
+    //New ROS node
+    ros::init(argc, argv, "mines_near_stacia");
+    ros::NodeHandle n;
+    double speed = 2.0;
+    double distance = 5.0;
+    bool isForward = 1;
+
+    velocity_publisher = n.advertise<geometry_msgs::Twist>("/turtle1/cmd_vel", 1000);
+    pose_sub = n.subscribe("/turtle1/pose", 10, poseCallback);
+    ros::Rate loop_rate(0.5);
+    
+    ROS_INFO("\n\n\n ********START TESTING*********\n");
+
+    move(speed, distance, isForward);
+
+
+	turtlesim::Pose goal_pose;
+	goal_pose.x = 1;
+	goal_pose.y = 1;
+	goal_pose.theta = 0;
+	moveGoal(goal_pose, 0.01);
+    loop_rate.sleep(); 
+
+
+    ros::spin();
+    return 0;
+}
+
+
+void move(double speed, double distance, bool isForward) {
+    //distance = speed * time
+    geometry_msgs::Twist vel_msg;
+
+    if (isForward) {
+        vel_msg.linear.x = abs(speed);
+    }
+    else {
+        vel_msg.linear.x = -abs(speed);
+    }
+
+    //no linear vel
+    vel_msg.linear.y = 0;
+    vel_msg.linear.z = 0;
+
+    //random ang vel in y
+    vel_msg.angular.x = 0;
+    vel_msg.angular.y = 0;
+    vel_msg.angular.z = 0;
+
+    //t0 = current time
+    //publish the velocity
+    double t0 = ros::Time::now().toSec();
+    double current_distance = 0;
+    ros::Rate loop_rate(100); //10 msg per sec
+    do {
+        velocity_publisher.publish(vel_msg);
+        double t1 = ros::Time::now().toSec();
+        current_distance = speed * (t1-t0);
+        ros::spinOnce(); //allows publisher to be published
+        loop_rate.sleep();
+
+    }while (current_distance < distance); //while smaller than dist I want to move
+
+    vel_msg.linear.x = 0; //stop immediately
+    velocity_publisher.publish(vel_msg);
+
+}
+
+void moveGoal(turtlesim::Pose goal_pose, double distance_tolerance){
+	//We implement a Proportional Controller. We need to go from (x,y) to (x',y'). Then, linear velocity v' = K ((x'-x)^2 + (y'-y)^2)^0.5 where K is the constant and ((x'-x)^2 + (y'-y)^2)^0.5 is the Euclidian distance. The steering angle theta = tan^-1(y'-y)/(x'-x) is the angle between these 2 points.
+	geometry_msgs::Twist vel_msg;
+
+	ros::Rate loop_rate(10);
+	do{
+		//linear velocity 
+		vel_msg.linear.x = 1.5*getDistance(turtlesim_pose.x, turtlesim_pose.y, goal_pose.x, goal_pose.y);
+		vel_msg.linear.y = 0;
+		vel_msg.linear.z = 0;
+		//angular velocity
+		vel_msg.angular.x = 0;
+		vel_msg.angular.y = 0;
+		vel_msg.angular.z = 4*(atan2(goal_pose.y - turtlesim_pose.y, goal_pose.x - turtlesim_pose.x)-turtlesim_pose.theta);
+
+		velocity_publisher.publish(vel_msg);
+
+		ros::spinOnce();
+		loop_rate.sleep();
+
+	}while(getDistance(turtlesim_pose.x, turtlesim_pose.y, goal_pose.x, goal_pose.y)>distance_tolerance);
+	cout<<"end move goal"<<endl;
+	vel_msg.linear.x = 0;
+	vel_msg.angular.z = 0;
+	velocity_publisher.publish(vel_msg);
+
+}
+
+double getDistance(double x1, double y1, double x2, double y2){
+	return sqrt(pow((x2-x1),2) + pow((y2-y1),2));
+}
