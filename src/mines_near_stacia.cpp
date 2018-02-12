@@ -1,3 +1,18 @@
+/*
+Code by Stacia Near
+HCR Class 2018
+
+Special thanks to Dr. Anis Koubaa
+for the use of much of the code
+from his turtlesim cleaner tutorial
+at http://wiki.ros.org/turtlesim
+
+My functions were adapted
+from this tutorial code,
+provided for beginners
+*/
+
+
 #include "ros/ros.h"
 #include "geometry_msgs/Twist.h"
 #include "std_msgs/String.h"
@@ -18,18 +33,15 @@ turtlesim::Pose turtlesim_pose;
 const double PI = 3.14159265359;
 
 //method to move robot straight
-void move(double speed, double distance, bool isForward);
 void rotate(double angular_speed, double angle, bool cloclwise);	//this will rotate the turtle at specified angle from its current angle
 double degrees2radians(double angle_in_degrees);		
 double setDesiredOrientation(double desired_angle_radians); //this will rotate the turtle at an absolute angle, whatever its current angle is
 void poseCallback(const turtlesim::Pose::ConstPtr & msg);	//Callback fn everytime the turtle pose msg is published over the /turtle1/pose topic.
-void moveGoal(turtlesim::Pose goal_pose, double distance_tolerance);	//this will move robot to goal
 void moveGoalLinear(turtlesim::Pose goal_pose);	//this will move robot to goal
 double getDistance(double x1, double y1, double x2, double y2);
 void readGoalPosesFromFile();
 
 //SUBSCRIBER CALL FUNCTION
-//void poseCallback(const std_msgs::String::ConstPtr& msg)
 void poseCallback(const turtlesim::Pose::ConstPtr &pose_message)
 {
     turtlesim_pose.x = pose_message->x;
@@ -54,23 +66,10 @@ int main(int argc, char **argv)
 
     velocity_publisher = n.advertise<geometry_msgs::Twist>("/turtle1/cmd_vel", 1000);
     pose_sub = n.subscribe("/turtle1/pose", 10, poseCallback);
-    //ros::Rate loop_rate(0.5);
     
     ROS_INFO("\n\n\n ********START TESTING*********\n");
 
-    //move(speed, distance, isForward);
-
     readGoalPosesFromFile();
-
-    /*
-	setDesiredOrientation(degrees2radians(0));
-	ros::Rate loop_rate(0.5);
-	loop_rate.sleep();
-	setDesiredOrientation(degrees2radians(90));
-	loop_rate.sleep();
-    setDesiredOrientation(degrees2radians(180));*/
-
-    //loop_rate.sleep();
 
     ros::spin();
     return 0;
@@ -84,9 +83,7 @@ void readGoalPosesFromFile() {
     {
         while (getline(poseFile, line))
         {
-            //this code block operates on one x,y coord
-            //cout << line << '\n';
-
+            //this code block operates on one x,y coord at a time
             if (line.find(",") != string::npos)
             {
                 int splitIndex = line.find(",");
@@ -122,45 +119,6 @@ void readGoalPosesFromFile() {
         cout << "Unable to open file\n\n";
 }
 
-//Only useful if not using position data
-void move(double speed, double distance, bool isForward) {
-    //distance = speed * time
-    geometry_msgs::Twist vel_msg;
-
-    if (isForward) {
-        vel_msg.linear.x = abs(speed);
-    }
-    else {
-        vel_msg.linear.x = -abs(speed);
-    }
-
-    //no linear vel
-    vel_msg.linear.y = 0;
-    vel_msg.linear.z = 0;
-
-    //random ang vel in y
-    vel_msg.angular.x = 0;
-    vel_msg.angular.y = 0;
-    vel_msg.angular.z = 0;
-
-    //t0 = current time
-    //publish the velocity
-    double t0 = ros::Time::now().toSec();
-    double current_distance = 0;
-    ros::Rate loop_rate(100); //10 msg per sec
-    do {
-        velocity_publisher.publish(vel_msg);
-        double t1 = ros::Time::now().toSec();
-        current_distance = speed * (t1-t0);
-        ros::spinOnce(); //allows publisher to be published
-        loop_rate.sleep();
-
-    }while (current_distance < distance); //while smaller than dist I want to move
-
-    vel_msg.linear.x = 0; //stop immediately
-    velocity_publisher.publish(vel_msg);
-
-}
 
 void rotate (double angular_speed, double relative_angle, bool clockwise){
 
@@ -213,7 +171,10 @@ double setDesiredOrientation(double desired_angle_radians)
 }
 
 void moveGoalLinear(turtlesim::Pose goal_pose){
-	//We implement a Proportional Controller. We need to go from (x,y) to (x',y'). Then, linear velocity v' = K ((x'-x)^2 + (y'-y)^2)^0.5 where K is the constant and ((x'-x)^2 + (y'-y)^2)^0.5 is the Euclidian distance. The steering angle theta = tan^-1(y'-y)/(x'-x) is the angle between these 2 points.
+	//We implement a Proportional Controller. We need to go from (x,y) to (x',y'). 
+    //Then, linear velocity v' = K ((x'-x)^2 + (y'-y)^2)^0.5 where K is the constant and 
+    //((x'-x)^2 + (y'-y)^2)^0.5 is the Euclidian distance. The steering angle theta = 
+    //tan^-1(y'-y)/(x'-x) is the angle between these 2 points.
 	geometry_msgs::Twist vel_msg;
     float min = std::numeric_limits<float>::max();
     float localMin = std::numeric_limits<float>::max();
@@ -257,36 +218,4 @@ void moveGoalLinear(turtlesim::Pose goal_pose){
 	vel_msg.linear.x = 0;
 	vel_msg.angular.z = 0;
 	velocity_publisher.publish(vel_msg);
-}
-
-void moveGoal(turtlesim::Pose goal_pose, double distance_tolerance){
-	//We implement a Proportional Controller. We need to go from (x,y) to (x',y'). Then, linear velocity v' = K ((x'-x)^2 + (y'-y)^2)^0.5 where K is the constant and ((x'-x)^2 + (y'-y)^2)^0.5 is the Euclidian distance. The steering angle theta = tan^-1(y'-y)/(x'-x) is the angle between these 2 points.
-	geometry_msgs::Twist vel_msg;
-
-	ros::Rate loop_rate(10);
-	do{
-		//linear velocity 
-		vel_msg.linear.x = 1.5*getDistance(turtlesim_pose.x, turtlesim_pose.y, goal_pose.x, goal_pose.y);
-		vel_msg.linear.y = 0;
-		vel_msg.linear.z = 0;
-		//angular velocity
-		vel_msg.angular.x = 0;
-		vel_msg.angular.y = 0;
-		vel_msg.angular.z = 4*(atan2(goal_pose.y - turtlesim_pose.y, goal_pose.x - turtlesim_pose.x)-turtlesim_pose.theta);
-
-		velocity_publisher.publish(vel_msg);
-
-		ros::spinOnce();
-		loop_rate.sleep();
-
-    //This part uses the SUBSCRIBER to check if the desired pose and current pose match yet
-	}while(getDistance(turtlesim_pose.x, turtlesim_pose.y, goal_pose.x, goal_pose.y)>distance_tolerance);
-	cout<<"end move goal"<<endl;
-	vel_msg.linear.x = 0;
-	vel_msg.angular.z = 0;
-	velocity_publisher.publish(vel_msg);
-}
-
-double getDistance(double x1, double y1, double x2, double y2){
-	return sqrt(pow((x2-x1),2) + pow((y2-y1),2));
 }
