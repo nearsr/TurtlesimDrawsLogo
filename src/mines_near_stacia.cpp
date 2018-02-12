@@ -6,6 +6,8 @@
 
 //File handling
 #include <fstream>
+//Other
+#include <limits>
 
 using namespace std;
 
@@ -13,13 +15,20 @@ ros::Publisher velocity_publisher;
 ros::Subscriber pose_sub;
 turtlesim::Pose turtlesim_pose;
 
+const double PI = 3.14159265359;
+
 //method to move robot straight
 void move(double speed, double distance, bool isForward);
+void rotate(double angular_speed, double angle, bool cloclwise);	//this will rotate the turtle at specified angle from its current angle
+double degrees2radians(double angle_in_degrees);		
+double setDesiredOrientation(double desired_angle_radians); //this will rotate the turtle at an absolute angle, whatever its current angle is
 void poseCallback(const turtlesim::Pose::ConstPtr & msg);	//Callback fn everytime the turtle pose msg is published over the /turtle1/pose topic.
 void moveGoal(turtlesim::Pose goal_pose, double distance_tolerance);	//this will move robot to goal
+void moveGoalLinear(turtlesim::Pose goal_pose);	//this will move robot to goal
 double getDistance(double x1, double y1, double x2, double y2);
 void readGoalPosesFromFile();
 
+//SUBSCRIBER CALL FUNCTION
 //void poseCallback(const std_msgs::String::ConstPtr& msg)
 void poseCallback(const turtlesim::Pose::ConstPtr &pose_message)
 {
@@ -34,13 +43,18 @@ int main(int argc, char **argv)
     //New ROS node
     ros::init(argc, argv, "mines_near_stacia");
     ros::NodeHandle n;
-    double speed = 2.0;
-    double distance = 5.0;
-    bool isForward = 1;
+
+    double speed, angular_speed;
+    double distance, angle;
+    bool isForward, clockwise;
+
+    speed = 2.0;
+    distance = 5.0;
+    isForward = 1;
 
     velocity_publisher = n.advertise<geometry_msgs::Twist>("/turtle1/cmd_vel", 1000);
     pose_sub = n.subscribe("/turtle1/pose", 10, poseCallback);
-    ros::Rate loop_rate(0.5);
+    //ros::Rate loop_rate(0.5);
     
     ROS_INFO("\n\n\n ********START TESTING*********\n");
 
@@ -48,30 +62,21 @@ int main(int argc, char **argv)
 
     readGoalPosesFromFile();
 
+    /*
+	setDesiredOrientation(degrees2radians(0));
+	ros::Rate loop_rate(0.5);
+	loop_rate.sleep();
+	setDesiredOrientation(degrees2radians(90));
+	loop_rate.sleep();
+    setDesiredOrientation(degrees2radians(180));*/
 
-    loop_rate.sleep();
+    //loop_rate.sleep();
 
     ros::spin();
     return 0;
 }
 
 void readGoalPosesFromFile() {
-    /*
-    ifstream inFile;
-    inFile.open("~/catkin_ws/src/mines_near_stacia/coords.txt");
-
-    if (!inFile)
-    {
-        cerr << "Unable to open file datafile.txt";
-        exit(1); // call system to stop
-    }
-
-    while (inFile >> x)
-    {
-        sum = sum + x;
-    }
-
-    inFile.close();*/
 
     string line;
     ifstream poseFile("/home/stacia/catkin_ws/src/mines_near_stacia/coords.txt");
@@ -107,7 +112,7 @@ void readGoalPosesFromFile() {
                 goal_pose.x = x;
                 goal_pose.y = y;
                 goal_pose.theta = 0;
-                moveGoal(goal_pose, 0.01);
+                moveGoalLinear(goal_pose);
             }
         }
         poseFile.close();
@@ -117,6 +122,7 @@ void readGoalPosesFromFile() {
         cout << "Unable to open file\n\n";
 }
 
+//Only useful if not using position data
 void move(double speed, double distance, bool isForward) {
     //distance = speed * time
     geometry_msgs::Twist vel_msg;
@@ -156,6 +162,103 @@ void move(double speed, double distance, bool isForward) {
 
 }
 
+void rotate (double angular_speed, double relative_angle, bool clockwise){
+
+	geometry_msgs::Twist vel_msg;
+	   //set a random linear velocity in the x-axis
+	   vel_msg.linear.x =0;
+	   vel_msg.linear.y =0;
+	   vel_msg.linear.z =0;
+	   //set a random angular velocity in the y-axis
+	   vel_msg.angular.x = 0;
+	   vel_msg.angular.y = 0;
+	   if (clockwise)
+	   	vel_msg.angular.z =-abs(angular_speed);
+	   else
+	   	vel_msg.angular.z =abs(angular_speed);
+
+	   double t0 = ros::Time::now().toSec();
+	   double current_angle = 0.0;
+	   ros::Rate loop_rate(1000);
+	   do{
+		   velocity_publisher.publish(vel_msg);
+		   double t1 = ros::Time::now().toSec();
+		   current_angle = angular_speed * (t1-t0);
+		   ros::spinOnce();
+		   loop_rate.sleep();
+		   //cout<<(t1-t0)<<", "<<current_angle <<", "<<relative_angle<<endl;
+	   }while(current_angle<relative_angle);
+	   vel_msg.angular.z =0;
+	   velocity_publisher.publish(vel_msg);
+}
+
+/**
+ *  converts angles from degree to radians  
+ */
+
+double degrees2radians(double angle_in_degrees){
+	return angle_in_degrees *PI /180.0;
+}
+
+/**
+ *  turns the robot to a desired absolute angle  
+ */
+double setDesiredOrientation(double desired_angle_radians)
+{	
+	double relative_angle_radians = desired_angle_radians - turtlesim_pose.theta;
+	//if we want to turn at a perticular orientation, we subtract the current orientation from it
+	bool clockwise = ((relative_angle_radians<0)?true:false);
+	//cout<<desired_angle_radians <<","<<turtlesim_pose.theta<<","<<relative_angle_radians<<","<<clockwise<<endl;
+	rotate (abs(relative_angle_radians), abs(relative_angle_radians), clockwise);
+}
+
+void moveGoalLinear(turtlesim::Pose goal_pose){
+	//We implement a Proportional Controller. We need to go from (x,y) to (x',y'). Then, linear velocity v' = K ((x'-x)^2 + (y'-y)^2)^0.5 where K is the constant and ((x'-x)^2 + (y'-y)^2)^0.5 is the Euclidian distance. The steering angle theta = tan^-1(y'-y)/(x'-x) is the angle between these 2 points.
+	geometry_msgs::Twist vel_msg;
+    float min = std::numeric_limits<float>::max();
+    float localMin = std::numeric_limits<float>::max();
+
+	ros::Rate loop_rate(10);
+
+    //First, turn towards the direction you want to go
+    //theta = atan(dy/dx)
+    //dy = desired y - turtle y
+    float desiredTheta = atan2(goal_pose.y - turtlesim_pose.y, goal_pose.x - turtlesim_pose.x);
+    cout << desiredTheta << endl;
+    //already in radians
+	setDesiredOrientation(desiredTheta);
+    loop_rate.sleep();
+
+	do{
+        min = localMin;
+
+		//linear velocity 
+		vel_msg.linear.x = 1.5*getDistance(turtlesim_pose.x, turtlesim_pose.y, goal_pose.x, goal_pose.y);
+		vel_msg.linear.y = 0;
+		vel_msg.linear.z = 0;
+		//angular velocity
+		vel_msg.angular.x = 0;
+		vel_msg.angular.y = 0;
+		vel_msg.angular.z = 0;
+
+		velocity_publisher.publish(vel_msg);
+
+		ros::spinOnce();
+		loop_rate.sleep();
+
+        localMin = getDistance(turtlesim_pose.x, turtlesim_pose.y, goal_pose.x, goal_pose.y);
+
+    //This part uses the SUBSCRIBER to check if the desired pose and current pose match yet
+    //since we might be off a little on the angle, we just want to get as close as we can
+    //as long as the distance is less that during the previous cycle, we must be getting closer
+	}while(abs(localMin) < abs(min));
+
+	cout<<"end move goal"<<endl;
+	vel_msg.linear.x = 0;
+	vel_msg.angular.z = 0;
+	velocity_publisher.publish(vel_msg);
+}
+
 void moveGoal(turtlesim::Pose goal_pose, double distance_tolerance){
 	//We implement a Proportional Controller. We need to go from (x,y) to (x',y'). Then, linear velocity v' = K ((x'-x)^2 + (y'-y)^2)^0.5 where K is the constant and ((x'-x)^2 + (y'-y)^2)^0.5 is the Euclidian distance. The steering angle theta = tan^-1(y'-y)/(x'-x) is the angle between these 2 points.
 	geometry_msgs::Twist vel_msg;
@@ -182,7 +285,6 @@ void moveGoal(turtlesim::Pose goal_pose, double distance_tolerance){
 	vel_msg.linear.x = 0;
 	vel_msg.angular.z = 0;
 	velocity_publisher.publish(vel_msg);
-
 }
 
 double getDistance(double x1, double y1, double x2, double y2){
