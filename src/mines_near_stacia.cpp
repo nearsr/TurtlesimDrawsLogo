@@ -158,6 +158,12 @@ double degrees2radians(double angle_in_degrees){
 	return angle_in_degrees *PI /180.0;
 }
 
+//Distance between points
+double getDistance(double x1, double y1, double x2, double y2)
+{
+	return sqrt(pow((x2-x1),2) + pow((y2-y1),2));
+}
+
 /**
  *  turns the robot to a desired absolute angle  
  */
