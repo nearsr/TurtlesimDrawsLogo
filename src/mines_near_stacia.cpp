@@ -44,17 +44,12 @@ int main(int argc, char **argv)
     
     ROS_INFO("\n\n\n ********START TESTING*********\n");
 
-    move(speed, distance, isForward);
+    //move(speed, distance, isForward);
 
     readGoalPosesFromFile();
 
-	turtlesim::Pose goal_pose;
-	goal_pose.x = 1;
-	goal_pose.y = 1;
-	goal_pose.theta = 0;
-	moveGoal(goal_pose, 0.01);
-    loop_rate.sleep(); 
 
+    loop_rate.sleep();
 
     ros::spin();
     return 0;
@@ -84,7 +79,36 @@ void readGoalPosesFromFile() {
     {
         while (getline(poseFile, line))
         {
-            cout << line << '\n';
+            //this code block operates on one x,y coord
+            //cout << line << '\n';
+
+            if (line.find(",") != string::npos)
+            {
+                int splitIndex = line.find(",");
+                string x_str = line.substr(0, splitIndex);//add the part up to comma to x
+                string y_str = line.substr(splitIndex + 1, string::npos); //skip comma, put rest in y
+
+                float x = strtof(x_str.c_str(),0);
+                float y = strtof(y_str.c_str(),0);
+
+                //transform coordinate frames
+                //scale, and flip
+                //turtle coordinate frame: bottom left is 0,0 - top right is 10,10
+                //-----------------------------------------------------------------
+                //text file coordinate frame: top left is 0,0 - bottom right is ~350,350
+                //                      V V V
+                //                     turtle:top left is 0,10 - bottom right is 10,0
+                x = x*10/350;
+                y = 10 - y*10/350;
+
+                cout << x << " " << y << endl;
+
+                turtlesim::Pose goal_pose;
+                goal_pose.x = x;
+                goal_pose.y = y;
+                goal_pose.theta = 0;
+                moveGoal(goal_pose, 0.01);
+            }
         }
         poseFile.close();
     }
@@ -152,6 +176,7 @@ void moveGoal(turtlesim::Pose goal_pose, double distance_tolerance){
 		ros::spinOnce();
 		loop_rate.sleep();
 
+    //This part uses the SUBSCRIBER to check if the desired pose and current pose match yet
 	}while(getDistance(turtlesim_pose.x, turtlesim_pose.y, goal_pose.x, goal_pose.y)>distance_tolerance);
 	cout<<"end move goal"<<endl;
 	vel_msg.linear.x = 0;
